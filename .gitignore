@@ -1,0 +1,47 @@
+# gradle
+
+.gradle/
+build/
+out/
+classes/
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# internal planning
+cooksense_plan.md
+multiloader_architecture_plan.md
+
+# eclipse
+
+*.launch
+
+# idea
+
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# vscode
+
+.settings/
+.vscode/
+bin/
+.classpath
+.project
+
+# macos
+
+*.DS_Store
+
+# fabric
+
+run/
+
+# java
+
+hs_err_*.log
+replay_*.log
+*.hprof
+*.jfr
+
