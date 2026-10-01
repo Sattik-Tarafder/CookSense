@@ -2,9 +2,15 @@ name: Compile Check
 
 on:
   push:
-    branches: [ "main", "1.21.1" ]
+    branches: [ "**" ]
+    paths-ignore:
+      - '**.md'
+      - 'assets/**'
   pull_request:
-    branches: [ "main", "1.21.1" ]
+    branches: [ "**" ]
+    paths-ignore:
+      - '**.md'
+      - 'assets/**'
 
 jobs:
   verify:
