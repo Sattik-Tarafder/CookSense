@@ -26,9 +26,7 @@ import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public class CookingOverlayRenderer {
 
@@ -293,10 +291,6 @@ public class CookingOverlayRenderer {
         // =========================================================================
         // PASS 2: Render 2D item icons inside the plate (+0.030f towards camera)
         // =========================================================================
-        MultiBufferSource itemConsumers = config.seeThroughBlocks
-                ? layer -> bufferSource.getBuffer(getSeeThroughLayer(layer))
-                : bufferSource;
-
         for (int r = 0; r < groups.size(); ++r) {
             CookingGroup g = groups.get(r);
             float rowY = startY + (r * rowHeight);
@@ -310,7 +304,7 @@ public class CookingOverlayRenderer {
                     0xF000F0,
                     OverlayTexture.NO_OVERLAY,
                     poseStack,
-                    itemConsumers,
+                    bufferSource,
                     campfire.getLevel(),
                     0
             );
@@ -318,9 +312,13 @@ public class CookingOverlayRenderer {
         }
 
         // =========================================================================
-        // PASS 3: Render text labels
+        // PASS 3: Render text labels (+0.015f towards camera in front of plate)
         // =========================================================================
         int textColor = (alphaInt << 24) | 0xFFFFFF;
+
+        poseStack.pushPose();
+        poseStack.translate(0.0f, 0.0f, 0.015f);
+        Matrix4f textMatrix = poseStack.last().pose();
 
         for (int r = 0; r < groups.size(); ++r) {
             CookingGroup g = groups.get(r);
@@ -332,25 +330,31 @@ public class CookingOverlayRenderer {
             float textX = startX + iconSize + gap;
             float textY = rowY;
 
-            Font.DisplayMode layerType = config.seeThroughBlocks
-                    ? Font.DisplayMode.SEE_THROUGH
-                    : Font.DisplayMode.NORMAL;
-
             font.drawInBatch(
                     label,
                     textX,
                     textY,
                     textColor,
                     config.textShadow,
-                    posMatrix,
+                    textMatrix,
                     bufferSource,
-                    layerType,
+                    Font.DisplayMode.NORMAL,
                     0,
                     0xF000F0
             );
         }
+        poseStack.popPose();
 
         poseStack.popPose();
+
+        // Flush CookSense batches immediately so the overlay renders during the block entity pass
+        // BEFORE translucent world geometry (water, ice, stained glass) is drawn.
+        // This ensures translucent blocks in front properly tint the overlay, while translucent
+        // blocks behind are correctly occluded and never bleed through.
+        if (bufferSource instanceof MultiBufferSource.BufferSource immediate) {
+            immediate.endBatch(bgLayer);
+            immediate.endBatch();
+        }
     }
 
     /**
@@ -378,7 +382,10 @@ public class CookingOverlayRenderer {
     }
 
     /**
-     * Non-translucent variant of text background (see-through) that bypasses CPU sortQuads().
+     * See-through variant of background plate:
+     * Uses GL_ALWAYS (519) so the plate punches through any occluding solid blocks/walls,
+     * while writing depth (depthMask=true) so items and text render with full 3D solid depth
+     * and translucent objects behind (water/ice) cannot bleed over it.
      */
     private static final RenderType COOKSENSE_BG_SEE_THROUGH = new RenderType(
             "cooksense_bg_seethrough",
@@ -388,19 +395,21 @@ public class CookingOverlayRenderer {
             false,
             false, // sortOnUpload = false: disables BuiltBuffer CPU quad sorting
             () -> {
-                RenderType.textBackgroundSeeThrough().setupRenderState();
-                RenderSystem.disableDepthTest();
-                RenderSystem.depthMask(false);
+                RenderType.textBackground().setupRenderState();
+                RenderSystem.enableDepthTest();
+                RenderSystem.depthFunc(519); // org.lwjgl.opengl.GL11.GL_ALWAYS
+                RenderSystem.depthMask(true);
             },
             () -> {
                 RenderSystem.depthMask(true);
-                RenderSystem.enableDepthTest();
-                RenderType.textBackgroundSeeThrough().clearRenderState();
+                RenderSystem.depthFunc(515); // org.lwjgl.opengl.GL11.GL_LEQUAL
+                RenderType.textBackground().clearRenderState();
             }
     ) {};
 
     /**
-     * Non-translucent variant of standard text background that bypasses CPU sortQuads().
+     * Standard variant of background plate:
+     * Uses GL_LEQUAL depth testing so it is naturally occluded by solid blocks.
      */
     private static final RenderType COOKSENSE_BG_NORMAL = new RenderType(
             "cooksense_bg_normal",
@@ -412,36 +421,13 @@ public class CookingOverlayRenderer {
             () -> {
                 RenderType.textBackground().setupRenderState();
                 RenderSystem.enableDepthTest();
-                RenderSystem.depthMask(false);
+                RenderSystem.depthFunc(515); // org.lwjgl.opengl.GL11.GL_LEQUAL
+                RenderSystem.depthMask(true);
             },
             () -> {
+                RenderSystem.depthMask(true);
+                RenderSystem.depthFunc(515); // org.lwjgl.opengl.GL11.GL_LEQUAL
                 RenderType.textBackground().clearRenderState();
             }
     ) {};
-
-    private static final Map<RenderType, RenderType> SEE_THROUGH_LAYERS = new HashMap<>();
-
-    /**
-     * Creates or retrieves a see-through variant of an item RenderType with depth testing disabled.
-     */
-    private static RenderType getSeeThroughLayer(RenderType orig) {
-        return SEE_THROUGH_LAYERS.computeIfAbsent(orig, l -> new RenderType(
-                l.toString() + "_cooksense_seethrough",
-                l.format(),
-                l.mode(),
-                l.bufferSize(),
-                l.affectsCrumbling(),
-                false, // sortOnUpload = false ensures items retain draw order without CPU sorting
-                () -> {
-                    l.setupRenderState();
-                    RenderSystem.disableDepthTest();
-                    RenderSystem.depthMask(false);
-                },
-                () -> {
-                    RenderSystem.depthMask(true);
-                    RenderSystem.enableDepthTest();
-                    l.clearRenderState();
-                }
-        ) {});
-    }
 }
