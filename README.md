@@ -17,8 +17,6 @@ Official releases of CookSense are exclusively distributed on:
 - [**CurseForge**](https://www.curseforge.com/minecraft/mc-mods/cooksense)
 - [**Modrinth**](https://modrinth.com/mod/cooksense)
 
-> **Notice:** We do not host or distribute compiled `.jar` binaries on GitHub to maintain official version verification and download analytics. Please only download CookSense from the official platforms above.
-
 ---
 
 ## Features
