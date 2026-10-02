@@ -1,4 +1,4 @@
-# 🍳 CookSense
+# CookSense
 
 [![CurseForge](https://cf.way2muchnoise.eu/full_cooksense_downloads.svg)](https://www.curseforge.com/minecraft/mc-mods/cooksense)
 [![Modrinth](https://img.shields.io/modrinth/dt/cooksense?logo=modrinth&label=Modrinth)](https://modrinth.com/mod/cooksense)
@@ -11,7 +11,7 @@ A lightweight, client-side Minecraft quality-of-life mod that displays floating 
 
 ---
 
-## 📥 Downloads
+## Downloads
 
 Official releases of CookSense are exclusively distributed on:
 - [**CurseForge**](https://www.curseforge.com/minecraft/mc-mods/cooksense)
@@ -21,18 +21,17 @@ Official releases of CookSense are exclusively distributed on:
 
 ---
 
-## ✨ Features
+## Features
 
-- **Live Countdown Timers**: Real-time remaining cooking seconds displayed above each campfire slot.
-- **Visual Progress Bars**: Animated progress bars smoothly track cooking progress and flash emerald green when ready.
-- **Stacked Item Grouping**: Multiple identical items placed at the same time are cleanly grouped into a single compact row.
-- **Soul Campfire Theme**: Automatically adapts to a glowing cyan and dark navy palette when cooking over soul fire.
-- **Adaptive Height & Occlusion**: Adjusts height under low ceilings and rotates smoothly with camera viewing angles.
-- **100% Client-Side**: Compatible with singleplayer, vanilla servers, Spigot/Paper/Purpur networks, and Minecraft Realms.
+- **Countdown Timers** — Displays the exact remaining cooking time for each item.
+- **Progress Bars** — Smooth color-coded bars that turn green when food is ready.
+- **Smart Grouping** — Combines identical items into one row to prevent clutter.
+- **Soul Campfire Theme** — Custom glowing cyan styling for soul campfires.
+- **100% Client-Side** — Fully client-side; works on singleplayer, vanilla servers, and Realms without server installation.
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 CookSense can be customized by editing `.minecraft/config/cooksense.json`:
 
@@ -45,20 +44,20 @@ CookSense can be customized by editing `.minecraft/config/cooksense.json`:
 
 ---
 
-## 🛠️ Building from Source
+## Building from Source
 
 To build CookSense locally:
 
 ```bash
-git clone https://github.com/Sattik03/CookSense.git
+git clone https://github.com/Sattik-Tarafder/CookSense.git
 cd CookSense
 ./gradlew build
 ```
 
-Compiled `.jar` files will be generated in `build/libs/`.
+Compiled `.jar` files will be generated in `fabric/build/libs/` and `neoforge/build/libs/`.
 
 ---
 
-## 📄 License
+## License
 
 CookSense is licensed under the [MIT License](LICENSE). You are free to include CookSense in any public or private modpack.
