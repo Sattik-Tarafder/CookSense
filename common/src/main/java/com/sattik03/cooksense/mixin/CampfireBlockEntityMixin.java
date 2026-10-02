@@ -46,9 +46,7 @@ public class CampfireBlockEntityMixin {
                 if (!stack.isEmpty()) {
                     // Fallback to recipe cooking time if total time is not yet known
                     if (cookingTime[i] <= 0) {
-                        cookingTime[i] = campfire.getCookableRecipe(stack)
-                                .map(recipe -> recipe.value().getCookingTime())
-                                .orElse(600); // 600 ticks = 30s default
+                        cookingTime[i] = com.sattik03.cooksense.render.CookingOverlayRenderer.getCampfireCookingTime(level, stack);
                     }
 
                     if (cookingProgress[i] < cookingTime[i]) {

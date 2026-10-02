@@ -15,8 +15,11 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.item.crafting.SingleRecipeInput;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.CampfireBlockEntity;
@@ -111,9 +114,7 @@ public class CookingOverlayRenderer {
             int totalTicks = i < cookingTime.length ? cookingTime[i] : 0;
 
             if (totalTicks <= 0) {
-                totalTicks = campfire.getCookableRecipe(item)
-                        .map(recipe -> recipe.value().getCookingTime())
-                        .orElse(600);
+                totalTicks = getCampfireCookingTime(campfire.getLevel(), item);
                 if (i < cookingTime.length) {
                     cookingTime[i] = totalTicks;
                 }
@@ -430,4 +431,34 @@ public class CookingOverlayRenderer {
                 RenderType.textBackground().clearRenderState();
             }
     ) {};
+
+    /**
+     * Resolves the cooking duration in ticks for a given item on a campfire.
+     * Uses ServerLevel / Singleplayer RecipeManager when available, defaulting to 600 ticks (30s).
+     */
+    public static int getCampfireCookingTime(Level level, ItemStack stack) {
+        if (stack.isEmpty()) {
+            return 600;
+        }
+
+        if (level instanceof ServerLevel serverLevel) {
+            return serverLevel.recipeAccess()
+                    .getRecipeFor(RecipeType.CAMPFIRE_COOKING, new SingleRecipeInput(stack), serverLevel)
+                    .map(r -> r.value().cookingTime())
+                    .orElse(600);
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null && mc.hasSingleplayerServer() && mc.getSingleplayerServer() != null) {
+            ServerLevel serverLevel = mc.getSingleplayerServer().overworld();
+            if (serverLevel != null) {
+                return mc.getSingleplayerServer().getRecipeManager()
+                        .getRecipeFor(RecipeType.CAMPFIRE_COOKING, new SingleRecipeInput(stack), serverLevel)
+                        .map(r -> r.value().cookingTime())
+                        .orElse(600);
+            }
+        }
+
+        return 600;
+    }
 }
