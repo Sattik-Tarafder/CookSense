@@ -33,6 +33,7 @@ import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
@@ -314,14 +315,32 @@ public class CookingOverlayRenderer {
             CookingGroup g = groups.get(r);
             float rowY = startY + (r * rowHeight);
 
+            ItemStackRenderState itemState = new ItemStackRenderState();
+            itemModelResolver.updateForTopItem(itemState, g.item, ItemDisplayContext.GUI, level, null, 0);
+
+            // When seeThroughBlocks is enabled, submit a textured see-through quad from the item's sprite (at z = 0.028f)
+            // so item icons remain fully visible when viewing through occluding blocks or walls!
+            if (config.seeThroughBlocks) {
+                TextureAtlasSprite sprite = itemState.pickParticleIcon(RandomSource.create());
+                if (sprite != null) {
+                    float x1 = startX;
+                    float y1 = rowY;
+                    float x2 = startX + iconSize;
+                    float y2 = rowY + iconSize;
+                    int spriteColor = (alphaInt << 24) | 0xFFFFFF;
+                    fgCollector.submitCustomGeometry(
+                            poseStack,
+                            RenderTypes.textSeeThrough(sprite.atlasLocation()),
+                            (pose, consumer) -> drawTexturedQuad(consumer, pose.pose(), x1, y1, x2, y2, 0.028f, sprite, spriteColor, 0xF000F0)
+                    );
+                }
+            }
+
+            // Normal 3D item model rendering (at z = 0.030f towards camera)
             poseStack.pushPose();
             poseStack.translate(startX + (iconSize / 2.0f), rowY + (iconSize / 2.0f), 0.030f);
             poseStack.scale(iconSize, -iconSize, iconSize);
-
-            ItemStackRenderState itemState = new ItemStackRenderState();
-            itemModelResolver.updateForTopItem(itemState, g.item, ItemDisplayContext.GUI, level, null, 0);
             itemState.submit(poseStack, fgNodeCollector, 0xF000F0, OverlayTexture.NO_OVERLAY, 0);
-
             poseStack.popPose();
         }
 
@@ -343,18 +362,18 @@ public class CookingOverlayRenderer {
             float textY = rowY;
             var visualText = Component.literal(label).getVisualOrderText();
 
-            // When seeThroughBlocks is enabled, submit a SEE_THROUGH text pass (with dropShadow=false)
-            // so it punches through occluding walls, matching vanilla nametag behavior.
+            // When seeThroughBlocks is enabled, submit a SEE_THROUGH text pass with full brightness and shadow
+            // so it punches through occluding walls clearly.
             if (config.seeThroughBlocks) {
                 fgCollector.submitText(
                         poseStack,
                         textX,
                         textY,
                         visualText,
-                        false,
+                        config.textShadow,
                         Font.DisplayMode.SEE_THROUGH,
                         0xF000F0,
-                        (Math.min(alphaInt, 0x80) << 24) | 0xFFFFFF,
+                        textColor,
                         0,
                         0
                 );
@@ -397,6 +416,16 @@ public class CookingOverlayRenderer {
         consumer.addVertex(matrix, x1, y2, z).setColor(color).setLight(light);
         consumer.addVertex(matrix, x2, y2, z).setColor(color).setLight(light);
         consumer.addVertex(matrix, x2, y1, z).setColor(color).setLight(light);
+    }
+
+    /**
+     * Emits a textured quad from a TextureAtlasSprite.
+     */
+    private static void drawTexturedQuad(VertexConsumer consumer, Matrix4f matrix, float x1, float y1, float x2, float y2, float z, TextureAtlasSprite sprite, int color, int light) {
+        consumer.addVertex(matrix, x1, y1, z).setColor(color).setUv(sprite.getU0(), sprite.getV0()).setLight(light);
+        consumer.addVertex(matrix, x1, y2, z).setColor(color).setUv(sprite.getU0(), sprite.getV1()).setLight(light);
+        consumer.addVertex(matrix, x2, y2, z).setColor(color).setUv(sprite.getU1(), sprite.getV1()).setLight(light);
+        consumer.addVertex(matrix, x2, y1, z).setColor(color).setUv(sprite.getU1(), sprite.getV0()).setLight(light);
     }
 
     /**
