@@ -23,6 +23,18 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 
+import net.minecraft.client.model.Model;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.client.renderer.OrderedSubmitNodeCollector;
+import net.minecraft.client.renderer.block.MovingBlockRenderState;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.block.model.BlockStateModel;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
+import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.world.level.block.state.BlockState;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -225,17 +237,13 @@ public class CookingOverlayRenderer {
         // =========================================================================
         // PASS 1: Render background quads and progress bars via submitCustomGeometry
         // =========================================================================
-        RenderType bgLayer = config.seeThroughBlocks
-                ? RenderTypes.textBackgroundSeeThrough()
-                : RenderTypes.textBackground();
-
         final int fMaxTextWidth = maxTextWidth;
         final boolean fIsSoulCampfire = isSoulCampfire;
         final int fAlphaInt = alphaInt;
         final int fBorderColor = borderColor;
         final int fBgColor = bgColor;
 
-        submitNodeCollector.submitCustomGeometry(poseStack, bgLayer, (pose, consumer) -> {
+        SubmitNodeCollector.CustomGeometryRenderer bgDrawer = (pose, consumer) -> {
             Matrix4f posMatrix = pose.pose();
 
             // 1a. Warm dark interior plate
@@ -280,7 +288,21 @@ public class CookingOverlayRenderer {
                     drawQuad(consumer, posMatrix, barX + filledWidth, barY, barX + barWidth, barY + barHeight, 0.005f, trackBgColor, 0xF000F0);
                 }
             }
-        });
+        };
+
+        // Submit background plate to Order 1 so it is guaranteed to render BEFORE foreground text and items (Order 2)
+        net.minecraft.client.renderer.OrderedSubmitNodeCollector bgCollector = submitNodeCollector.order(1);
+        net.minecraft.client.renderer.OrderedSubmitNodeCollector fgCollector = submitNodeCollector.order(2);
+        SubmitNodeCollector fgNodeCollector = new OrderedSubmitNodeCollectorAdapter(submitNodeCollector, 2);
+
+        // If see-through is requested, submit the see-through layer so the plate punches through occluding solid blocks
+        if (config.seeThroughBlocks) {
+            bgCollector.submitCustomGeometry(poseStack, RenderTypes.textBackgroundSeeThrough(), bgDrawer);
+        }
+
+        // Always submit the standard textBackground layer which writes depth (depthMask=true)
+        // so that smoke particles behind the campfire cannot bleed through the plate in direct line-of-sight
+        bgCollector.submitCustomGeometry(poseStack, RenderTypes.textBackground(), bgDrawer);
 
         // =========================================================================
         // PASS 2: Render 2D item icons inside the plate (+0.030f towards camera)
@@ -298,7 +320,7 @@ public class CookingOverlayRenderer {
 
             ItemStackRenderState itemState = new ItemStackRenderState();
             itemModelResolver.updateForTopItem(itemState, g.item, ItemDisplayContext.GUI, level, null, 0);
-            itemState.submit(poseStack, submitNodeCollector, 0xF000F0, OverlayTexture.NO_OVERLAY, 0);
+            itemState.submit(poseStack, fgNodeCollector, 0xF000F0, OverlayTexture.NO_OVERLAY, 0);
 
             poseStack.popPose();
         }
@@ -307,10 +329,6 @@ public class CookingOverlayRenderer {
         // PASS 3: Render text labels (+0.015f towards camera in front of plate)
         // =========================================================================
         int textColor = (alphaInt << 24) | 0xFFFFFF;
-        Font.DisplayMode displayMode = config.seeThroughBlocks
-                ? Font.DisplayMode.SEE_THROUGH
-                : Font.DisplayMode.NORMAL;
-
         poseStack.pushPose();
         poseStack.translate(0.0f, 0.0f, 0.015f);
 
@@ -323,14 +341,33 @@ public class CookingOverlayRenderer {
 
             float textX = startX + iconSize + gap;
             float textY = rowY;
+            var visualText = Component.literal(label).getVisualOrderText();
 
-            submitNodeCollector.submitText(
+            // When seeThroughBlocks is enabled, submit a SEE_THROUGH text pass (with dropShadow=false)
+            // so it punches through occluding walls, matching vanilla nametag behavior.
+            if (config.seeThroughBlocks) {
+                fgCollector.submitText(
+                        poseStack,
+                        textX,
+                        textY,
+                        visualText,
+                        false,
+                        Font.DisplayMode.SEE_THROUGH,
+                        0xF000F0,
+                        (Math.min(alphaInt, 0x80) << 24) | 0xFFFFFF,
+                        0,
+                        0
+                );
+            }
+
+            // Always submit the NORMAL text pass with crisp colors, full brightness, and drop shadows
+            fgCollector.submitText(
                     poseStack,
                     textX,
                     textY,
-                    Component.literal(label).getVisualOrderText(),
+                    visualText,
                     config.textShadow,
-                    displayMode,
+                    Font.DisplayMode.NORMAL,
                     0xF000F0,
                     textColor,
                     0,
@@ -365,7 +402,91 @@ public class CookingOverlayRenderer {
     /**
      * Resolves campfire cooking duration fallback (600 ticks = 30 seconds).
      */
-    public static int getCampfireCookingTime(Level level, ItemStack stack) {
-        return 600;
+     public static int getCampfireCookingTime(Level level, ItemStack stack) {
+         return 600;
+     }
+
+    /**
+     * Adapter wrapping an OrderedSubmitNodeCollector into a SubmitNodeCollector,
+     * ensuring that submissions routed through ItemStackRenderState are placed into the desired order.
+     */
+    private static class OrderedSubmitNodeCollectorAdapter implements SubmitNodeCollector {
+        private final SubmitNodeCollector root;
+        private final OrderedSubmitNodeCollector delegate;
+
+        OrderedSubmitNodeCollectorAdapter(SubmitNodeCollector root, int order) {
+            this.root = root;
+            this.delegate = root.order(order);
+        }
+
+        @Override
+        public OrderedSubmitNodeCollector order(int order) {
+            return root.order(order);
+        }
+
+        @Override
+        public void submitShadow(PoseStack poseStack, float f, List<EntityRenderState.ShadowPiece> list) {
+            delegate.submitShadow(poseStack, f, list);
+        }
+
+        @Override
+        public void submitNameTag(PoseStack poseStack, Vec3 vec3, int i, Component component, boolean bl, int j, double d, CameraRenderState cameraRenderState) {
+            delegate.submitNameTag(poseStack, vec3, i, component, bl, j, d, cameraRenderState);
+        }
+
+        @Override
+        public void submitText(PoseStack poseStack, float f, float g, FormattedCharSequence formattedCharSequence, boolean bl, Font.DisplayMode displayMode, int i, int j, int k, int l) {
+            delegate.submitText(poseStack, f, g, formattedCharSequence, bl, displayMode, i, j, k, l);
+        }
+
+        @Override
+        public void submitFlame(PoseStack poseStack, EntityRenderState entityRenderState, Quaternionf quaternionf) {
+            delegate.submitFlame(poseStack, entityRenderState, quaternionf);
+        }
+
+        @Override
+        public void submitLeash(PoseStack poseStack, EntityRenderState.LeashState leashState) {
+            delegate.submitLeash(poseStack, leashState);
+        }
+
+        @Override
+        public <S> void submitModel(Model<? super S> model, S object, PoseStack poseStack, RenderType renderType, int i, int j, int k, TextureAtlasSprite sprite, int l, ModelFeatureRenderer.CrumblingOverlay crumblingOverlay) {
+            delegate.submitModel(model, object, poseStack, renderType, i, j, k, sprite, l, crumblingOverlay);
+        }
+
+        @Override
+        public void submitModelPart(ModelPart modelPart, PoseStack poseStack, RenderType renderType, int i, int j, TextureAtlasSprite sprite, boolean bl, boolean bl2, int k, ModelFeatureRenderer.CrumblingOverlay crumblingOverlay, int l) {
+            delegate.submitModelPart(modelPart, poseStack, renderType, i, j, sprite, bl, bl2, k, crumblingOverlay, l);
+        }
+
+        @Override
+        public void submitBlock(PoseStack poseStack, BlockState blockState, int i, int j, int k) {
+            delegate.submitBlock(poseStack, blockState, i, j, k);
+        }
+
+        @Override
+        public void submitMovingBlock(PoseStack poseStack, MovingBlockRenderState movingBlockRenderState) {
+            delegate.submitMovingBlock(poseStack, movingBlockRenderState);
+        }
+
+        @Override
+        public void submitBlockModel(PoseStack poseStack, RenderType renderType, BlockStateModel blockStateModel, float f, float g, float h, int i, int j, int k) {
+            delegate.submitBlockModel(poseStack, renderType, blockStateModel, f, g, h, i, j, k);
+        }
+
+        @Override
+        public void submitItem(PoseStack poseStack, ItemDisplayContext itemDisplayContext, int i, int j, int k, int[] is, List<BakedQuad> list, RenderType renderType, ItemStackRenderState.FoilType foilType) {
+            delegate.submitItem(poseStack, itemDisplayContext, i, j, k, is, list, renderType, foilType);
+        }
+
+        @Override
+        public void submitCustomGeometry(PoseStack poseStack, RenderType renderType, SubmitNodeCollector.CustomGeometryRenderer customGeometryRenderer) {
+            delegate.submitCustomGeometry(poseStack, renderType, customGeometryRenderer);
+        }
+
+        @Override
+        public void submitParticleGroup(SubmitNodeCollector.ParticleGroupRenderer particleGroupRenderer) {
+            delegate.submitParticleGroup(particleGroupRenderer);
+        }
     }
 }
