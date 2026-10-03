@@ -55,14 +55,11 @@ public class CampfireRendererMixin {
         Level level = blockEntity.getLevel();
         BlockPos pos = blockEntity.getBlockPos();
         boolean hasBlockAbove = false;
-        float gameTime = 0.0f;
         if (level != null) {
             BlockState stateAbove = level.getBlockState(pos.above());
             hasBlockAbove = !stateAbove.isAir() && !stateAbove.getCollisionShape(level, pos.above()).isEmpty();
-            gameTime = level.getGameTime() + partialTick;
         }
         ext.cooksense$setHasBlockAbove(hasBlockAbove);
-        ext.cooksense$setGameTime(gameTime);
 
         NonNullList<ItemStack> rawItems = blockEntity.getItems();
         List<ItemStack> copiedItems = new ArrayList<>(rawItems.size());

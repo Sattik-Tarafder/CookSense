@@ -11,7 +11,6 @@ import net.minecraft.client.renderer.blockentity.state.CampfireRenderState;
 import net.minecraft.client.renderer.item.ItemModelResolver;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.client.renderer.rendertype.RenderType;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.state.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
@@ -196,7 +195,7 @@ public class CookingOverlayRenderer {
                 : ((bgAlpha << 24) | 0x16100C);
 
         // Subtle heat updraft bobbing: breathes gently above the campfire
-        float gameTime = ext.cooksense$getGameTime();
+        float gameTime = (System.currentTimeMillis() % 10000000L) / 50.0f;
         float bob = (float) Math.sin(gameTime * 0.08f) * 0.02f;
 
         boolean hasBlockAbove = ext.cooksense$hasBlockAbove();
@@ -310,12 +309,12 @@ public class CookingOverlayRenderer {
         SubmitNodeCollector fgNodeCollector = new OrderedSubmitNodeCollectorAdapter(submitNodeCollector, 3);
 
         if (config.seeThroughBlocks) {
-            bgCollector.submitCustomGeometry(poseStack, RenderTypes.textBackgroundSeeThrough(), bgDrawer);
-            barCollector.submitCustomGeometry(poseStack, RenderTypes.textBackgroundSeeThrough(), barDrawer);
+            bgCollector.submitCustomGeometry(poseStack, RenderTypeHelper.textBackgroundSeeThrough(), bgDrawer);
+            barCollector.submitCustomGeometry(poseStack, RenderTypeHelper.textBackgroundSeeThrough(), barDrawer);
         }
 
-        bgCollector.submitCustomGeometry(poseStack, RenderTypes.textBackground(), bgDrawer);
-        barCollector.submitCustomGeometry(poseStack, RenderTypes.textBackground(), barDrawer);
+        bgCollector.submitCustomGeometry(poseStack, RenderTypeHelper.textBackground(), bgDrawer);
+        barCollector.submitCustomGeometry(poseStack, RenderTypeHelper.textBackground(), barDrawer);
 
         // =========================================================================
         // PASS 2: Render 2D item icons inside the plate (+0.030f towards camera)
@@ -342,7 +341,7 @@ public class CookingOverlayRenderer {
                     int spriteColor = (alphaInt << 24) | 0xFFFFFF;
                     fgCollector.submitCustomGeometry(
                             poseStack,
-                            RenderTypes.textSeeThrough(sprite.atlasLocation()),
+                            RenderTypeHelper.textSeeThrough(sprite.atlasLocation()),
                             (pose, consumer) -> drawTexturedQuad(consumer, pose.pose(), x1, y1, x2, y2, 0.028f, sprite, spriteColor, 0xF000F0)
                     );
                 }
