@@ -236,11 +236,8 @@ public class CookingOverlayRenderer {
         poseStack.scale(scale, -scale, scale);
 
         // =========================================================================
-        // PASS 1: Render background quads and progress bars via submitCustomGeometry
+        // PASS 1: Render background plate and outer border (Order 1)
         // =========================================================================
-        final int fMaxTextWidth = maxTextWidth;
-        final boolean fIsSoulCampfire = isSoulCampfire;
-        final int fAlphaInt = alphaInt;
         final int fBorderColor = borderColor;
         final int fBgColor = bgColor;
 
@@ -252,8 +249,20 @@ public class CookingOverlayRenderer {
 
             // 1b. Cozy 1px outer framing border
             drawHollowBorder(consumer, posMatrix, minX - 1.0f, minY - 1.0f, maxX + 1.0f, maxY + 1.0f, 0.001f, fBorderColor, 0xF000F0);
+        };
 
-            // 1c. Mini progress bar tracks and fills for each row
+        // =========================================================================
+        // PASS 2: Render progress bar tracks and fills (Order 2)
+        // Kept in a dedicated order so that the dark background plate in Order 1
+        // can NEVER be sorted on top of the progress bars in see-through mode!
+        // =========================================================================
+        final int fMaxTextWidth = maxTextWidth;
+        final boolean fIsSoulCampfire = isSoulCampfire;
+        final int fAlphaInt = alphaInt;
+
+        SubmitNodeCollector.CustomGeometryRenderer barDrawer = (pose, consumer) -> {
+            Matrix4f posMatrix = pose.pose();
+
             for (int r = 0; r < groups.size(); ++r) {
                 CookingGroup g = groups.get(r);
                 float rowY = startY + (r * rowHeight);
@@ -277,7 +286,7 @@ public class CookingOverlayRenderer {
                 int trackBgColor = (fAlphaInt << 24) | (fIsSoulCampfire ? 0x0A1620 : 0x1A120E);
                 int barFillColor = (fAlphaInt << 24) | barColorRgb;
 
-                drawHollowBorder(consumer, posMatrix, barX - 1.0f, barY - 1.0f, barX + barWidth + 1.0f, barY + barHeight + 1.0f, 0.005f, grooveBorderColor, 0xF000F0);
+                drawHollowBorder(consumer, posMatrix, barX - 1.0f, barY - 1.0f, barX + barWidth + 1.0f, barY + barHeight + 1.0f, 0.003f, grooveBorderColor, 0xF000F0);
 
                 float filledWidth = progress > 0.0f ? Math.min(barWidth, Math.max(1.5f, barWidth * progress)) : 0.0f;
 
@@ -286,24 +295,27 @@ public class CookingOverlayRenderer {
                 }
 
                 if (filledWidth < barWidth) {
-                    drawQuad(consumer, posMatrix, barX + filledWidth, barY, barX + barWidth, barY + barHeight, 0.005f, trackBgColor, 0xF000F0);
+                    drawQuad(consumer, posMatrix, barX + filledWidth, barY, barX + barWidth, barY + barHeight, 0.004f, trackBgColor, 0xF000F0);
                 }
             }
         };
 
-        // Submit background plate to Order 1 so it is guaranteed to render BEFORE foreground text and items (Order 2)
+        // Submit to ordered passes:
+        // Order 1: Background plate & border
+        // Order 2: Progress bars (guaranteed to render on top of plate)
+        // Order 3: Foreground items & text (guaranteed to render on top of plate and bars)
         net.minecraft.client.renderer.OrderedSubmitNodeCollector bgCollector = submitNodeCollector.order(1);
-        net.minecraft.client.renderer.OrderedSubmitNodeCollector fgCollector = submitNodeCollector.order(2);
-        SubmitNodeCollector fgNodeCollector = new OrderedSubmitNodeCollectorAdapter(submitNodeCollector, 2);
+        net.minecraft.client.renderer.OrderedSubmitNodeCollector barCollector = submitNodeCollector.order(2);
+        net.minecraft.client.renderer.OrderedSubmitNodeCollector fgCollector = submitNodeCollector.order(3);
+        SubmitNodeCollector fgNodeCollector = new OrderedSubmitNodeCollectorAdapter(submitNodeCollector, 3);
 
-        // If see-through is requested, submit the see-through layer so the plate punches through occluding solid blocks
         if (config.seeThroughBlocks) {
             bgCollector.submitCustomGeometry(poseStack, RenderTypes.textBackgroundSeeThrough(), bgDrawer);
+            barCollector.submitCustomGeometry(poseStack, RenderTypes.textBackgroundSeeThrough(), barDrawer);
         }
 
-        // Always submit the standard textBackground layer which writes depth (depthMask=true)
-        // so that smoke particles behind the campfire cannot bleed through the plate in direct line-of-sight
         bgCollector.submitCustomGeometry(poseStack, RenderTypes.textBackground(), bgDrawer);
+        barCollector.submitCustomGeometry(poseStack, RenderTypes.textBackground(), barDrawer);
 
         // =========================================================================
         // PASS 2: Render 2D item icons inside the plate (+0.030f towards camera)
