@@ -3,7 +3,7 @@
 [![CurseForge](https://cf.way2muchnoise.eu/full_cooksense_downloads.svg)](https://www.curseforge.com/minecraft/mc-mods/cooksense)
 [![Modrinth](https://img.shields.io/modrinth/dt/cooksense?logo=modrinth&label=Modrinth)](https://modrinth.com/mod/cooksense)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Minecraft](https://img.shields.io/badge/Minecraft-1.21.2--1.21.3-brightgreen.svg)]()
+[![Minecraft](https://img.shields.io/badge/Minecraft-1.21.4--1.21.11-brightgreen.svg)]()
 [![Fabric](https://img.shields.io/badge/Loader-Fabric-blue.svg)](https://fabricmc.net/)
 [![NeoForge](https://img.shields.io/badge/Loader-NeoForge-orange.svg)](https://neoforged.net/)
 
