@@ -7,11 +7,13 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 public class CookSenseClient implements ClientModInitializer {
 
     public static final String MOD_ID = "cooksense";
+    private static final KeyMapping.Category COOKSENSE_CATEGORY = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("cooksense", "category"));
     private static KeyMapping toggleKey;
 
     @Override
@@ -24,7 +26,7 @@ public class CookSenseClient implements ClientModInitializer {
                 "key.cooksense.toggle",
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_K,
-                "key.cooksense.category"
+                COOKSENSE_CATEGORY
         ));
 
         // Listen for key presses every client tick

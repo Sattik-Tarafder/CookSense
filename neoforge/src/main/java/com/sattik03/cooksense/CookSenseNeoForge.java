@@ -5,6 +5,7 @@ import com.sattik03.cooksense.config.CookSenseConfig;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
@@ -20,17 +21,19 @@ public class CookSenseNeoForge {
     private static KeyMapping toggleKey;
 
     public CookSenseNeoForge(IEventBus eventBus) {
-        if (FMLEnvironment.dist == Dist.CLIENT) {
+        if (FMLEnvironment.getDist() == Dist.CLIENT) {
             // Initialize config
             CookSenseConfig.getInstance();
 
             // Register key mappings on mod event bus
             eventBus.addListener(RegisterKeyMappingsEvent.class, event -> {
+                KeyMapping.Category category = new KeyMapping.Category(Identifier.fromNamespaceAndPath("cooksense", "category"));
+                event.registerCategory(category);
                 toggleKey = new KeyMapping(
                         "key.cooksense.toggle",
                         InputConstants.Type.KEYSYM,
                         GLFW.GLFW_KEY_K,
-                        "key.cooksense.category"
+                        category
                 );
                 event.register(toggleKey);
             });
