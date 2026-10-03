@@ -199,7 +199,7 @@ public class CookingOverlayRenderer {
         float bob = (float) Math.sin(gameTime * 0.08f) * 0.02f;
 
         boolean hasBlockAbove = ext.cooksense$hasBlockAbove();
-        boolean adaptToCeiling = hasBlockAbove && !config.seeThroughBlocks;
+        boolean adaptToCeiling = hasBlockAbove;
         float baseY = adaptToCeiling ? 0.68f : 1.45f;
         float scaleFactor = adaptToCeiling ? 0.018f : 0.020f;
         float scale = scaleFactor * config.textScale;
