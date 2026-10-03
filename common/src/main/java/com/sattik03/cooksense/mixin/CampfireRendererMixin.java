@@ -5,6 +5,7 @@ import com.sattik03.cooksense.render.CookingOverlayRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.blockentity.CampfireRenderer;
 import net.minecraft.world.level.block.entity.CampfireBlockEntity;
+import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -14,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class CampfireRendererMixin {
 
     @Inject(
-            method = "render(Lnet/minecraft/world/level/block/entity/CampfireBlockEntity;FLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;II)V",
+            method = "render(Lnet/minecraft/world/level/block/entity/CampfireBlockEntity;FLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IILnet/minecraft/world/phys/Vec3;)V",
             at = @At("TAIL")
     )
     private void cooksense$renderOverlay(
@@ -24,6 +25,7 @@ public class CampfireRendererMixin {
             MultiBufferSource bufferSource,
             int packedLight,
             int packedOverlay,
+            Vec3 cameraPos,
             CallbackInfo ci
     ) {
         CookingOverlayRenderer.renderCampfireOverlay(campfire, partialTick, poseStack, bufferSource, packedLight, packedOverlay);

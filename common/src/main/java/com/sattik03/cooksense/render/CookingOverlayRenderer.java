@@ -1,10 +1,7 @@
 package com.sattik03.cooksense.render;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.mojang.blaze3d.vertex.VertexFormat;
 import com.sattik03.cooksense.config.CookSenseConfig;
 import com.sattik03.cooksense.mixin.CampfireBlockEntityAccessor;
 import net.minecraft.client.Camera;
@@ -25,10 +22,41 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
 public class CookingOverlayRenderer {
+
+    private static final MethodHandle DRAW_IN_BATCH_HANDLE;
+
+    static {
+        MethodHandle handle = null;
+        try {
+            MethodHandles.Lookup lookup = MethodHandles.publicLookup();
+            for (Method m : Font.class.getMethods()) {
+                Class<?>[] params = m.getParameterTypes();
+                if (params.length == 10
+                        && params[0] == String.class
+                        && params[1] == float.class
+                        && params[2] == float.class
+                        && params[3] == int.class
+                        && params[4] == boolean.class
+                        && params[5] == Matrix4f.class
+                        && params[6] == MultiBufferSource.class
+                        && params[7] == Font.DisplayMode.class
+                        && params[8] == int.class
+                        && params[9] == int.class) {
+                    handle = lookup.unreflect(m);
+                    break;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        DRAW_IN_BATCH_HANDLE = handle;
+    }
 
     /**
      * Group representing one or more identical items cooking with similar progress.
@@ -236,8 +264,8 @@ public class CookingOverlayRenderer {
         // PASS 1: Render all background quads in one contiguous batch.
         // =========================================================================
         RenderType bgLayer = config.seeThroughBlocks
-                ? COOKSENSE_BG_SEE_THROUGH
-                : COOKSENSE_BG_NORMAL;
+                ? RenderType.textBackgroundSeeThrough()
+                : RenderType.textBackground();
         VertexConsumer bgConsumer = bufferSource.getBuffer(bgLayer);
 
         // 1a. Warm dark interior plate (solid backing)
@@ -328,7 +356,8 @@ public class CookingOverlayRenderer {
             float textX = startX + iconSize + gap;
             float textY = rowY;
 
-            font.drawInBatch(
+            drawText(
+                    font,
                     label,
                     textX,
                     textY,
@@ -355,6 +384,31 @@ public class CookingOverlayRenderer {
         }
     }
 
+    private static void drawText(
+            Font font,
+            String text,
+            float x,
+            float y,
+            int color,
+            boolean dropShadow,
+            Matrix4f matrix,
+            MultiBufferSource bufferSource,
+            Font.DisplayMode displayMode,
+            int backgroundColor,
+            int packedLight
+    ) {
+        if (DRAW_IN_BATCH_HANDLE != null) {
+            try {
+                DRAW_IN_BATCH_HANDLE.invoke(
+                        font, text, x, y, color, dropShadow, matrix, bufferSource, displayMode, backgroundColor, packedLight
+                );
+                return;
+            } catch (Throwable ignored) {
+            }
+        }
+        font.drawInBatch(text, x, y, color, dropShadow, matrix, bufferSource, displayMode, backgroundColor, packedLight);
+    }
+
     /**
      * Draws a 1-pixel hollow border frame around a rectangle.
      */
@@ -379,55 +433,6 @@ public class CookingOverlayRenderer {
         consumer.addVertex(matrix, x2, y1, z).setColor(color).setLight(light);
     }
 
-    /**
-     * See-through variant of background plate:
-     * Uses GL_ALWAYS (519) so the plate punches through any occluding solid blocks/walls,
-     * while writing depth (depthMask=true) so items and text render with full 3D solid depth
-     * and translucent objects behind (water/ice) cannot bleed over it.
-     */
-    private static final RenderType COOKSENSE_BG_SEE_THROUGH = new RenderType(
-            "cooksense_bg_seethrough",
-            DefaultVertexFormat.POSITION_COLOR_LIGHTMAP,
-            VertexFormat.Mode.QUADS,
-            1536,
-            false,
-            false, // sortOnUpload = false: disables BuiltBuffer CPU quad sorting
-            () -> {
-                RenderType.textBackground().setupRenderState();
-                RenderSystem.enableDepthTest();
-                RenderSystem.depthFunc(519); // org.lwjgl.opengl.GL11.GL_ALWAYS
-                RenderSystem.depthMask(true);
-            },
-            () -> {
-                RenderSystem.depthMask(true);
-                RenderSystem.depthFunc(515); // org.lwjgl.opengl.GL11.GL_LEQUAL
-                RenderType.textBackground().clearRenderState();
-            }
-    ) {};
-
-    /**
-     * Standard variant of background plate:
-     * Uses GL_LEQUAL depth testing so it is naturally occluded by solid blocks.
-     */
-    private static final RenderType COOKSENSE_BG_NORMAL = new RenderType(
-            "cooksense_bg_normal",
-            DefaultVertexFormat.POSITION_COLOR_LIGHTMAP,
-            VertexFormat.Mode.QUADS,
-            1536,
-            false,
-            false, // sortOnUpload = false: disables BuiltBuffer CPU quad sorting
-            () -> {
-                RenderType.textBackground().setupRenderState();
-                RenderSystem.enableDepthTest();
-                RenderSystem.depthFunc(515); // org.lwjgl.opengl.GL11.GL_LEQUAL
-                RenderSystem.depthMask(true);
-            },
-            () -> {
-                RenderSystem.depthMask(true);
-                RenderSystem.depthFunc(515); // org.lwjgl.opengl.GL11.GL_LEQUAL
-                RenderType.textBackground().clearRenderState();
-            }
-    ) {};
 
     /**
      * Resolves the cooking duration fallback in ticks for a given item on a campfire.
