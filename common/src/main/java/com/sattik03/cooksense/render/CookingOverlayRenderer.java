@@ -215,9 +215,9 @@ public class CookingOverlayRenderer {
             float pitch = Math.min(0.0f, cameraRenderState.xRot);
             Quaternionf rot = new Quaternionf()
                     .rotationYXZ((float) Math.PI - cameraRenderState.yRot * 0.017453292F, -pitch * 0.017453292F, 0.0F);
-            poseStack.mulPose(rot);
+            poseStack.rotate(rot);
         } else if (cameraRenderState != null) {
-            poseStack.mulPose(cameraRenderState.orientation);
+            poseStack.rotate(cameraRenderState.orientation);
         }
         poseStack.scale(scale, -scale, scale);
 

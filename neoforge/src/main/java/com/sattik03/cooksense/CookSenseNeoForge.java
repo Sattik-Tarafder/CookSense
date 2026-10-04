@@ -13,7 +13,6 @@ import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import org.lwjgl.glfw.GLFW;
 
 @Mod("cooksense")
 public class CookSenseNeoForge {
@@ -31,8 +30,8 @@ public class CookSenseNeoForge {
                 event.registerCategory(category);
                 toggleKey = new KeyMapping(
                         "key.cooksense.toggle",
-                        InputConstants.Type.KEYSYM,
-                        GLFW.GLFW_KEY_K,
+                        InputConstants.Type.KEYBOARD,
+                        InputConstants.KEY_K,
                         category
                 );
                 event.register(toggleKey);

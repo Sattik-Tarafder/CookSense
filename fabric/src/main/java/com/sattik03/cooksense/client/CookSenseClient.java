@@ -8,7 +8,6 @@ import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import org.lwjgl.glfw.GLFW;
 
 public class CookSenseClient implements ClientModInitializer {
 
@@ -24,8 +23,8 @@ public class CookSenseClient implements ClientModInitializer {
         // Register toggle keybind (default: 'K')
         toggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.cooksense.toggle",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_K,
+                InputConstants.Type.KEYBOARD,
+                InputConstants.KEY_K,
                 COOKSENSE_CATEGORY
         ));
 
