@@ -47,7 +47,7 @@ public class CookSenseNeoForge {
                         config.save();
 
                         Component message = Component.translatable(config.enabled ? "message.cooksense.toggle.on" : "message.cooksense.toggle.off");
-                        Minecraft.getInstance().player.displayClientMessage(message, true);
+                        Minecraft.getInstance().player.sendOverlayMessage(message);
                     }
                 }
             });

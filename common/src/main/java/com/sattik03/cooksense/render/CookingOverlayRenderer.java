@@ -3,7 +3,6 @@ package com.sattik03.cooksense.render;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.sattik03.cooksense.config.CookSenseConfig;
-import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.SubmitNodeCollector;
@@ -11,7 +10,7 @@ import net.minecraft.client.renderer.blockentity.state.CampfireRenderState;
 import net.minecraft.client.renderer.item.ItemModelResolver;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.client.renderer.rendertype.RenderType;
-import net.minecraft.client.renderer.state.CameraRenderState;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -22,14 +21,7 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 
-import net.minecraft.client.model.Model;
-import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.OrderedSubmitNodeCollector;
-import net.minecraft.client.renderer.block.MovingBlockRenderState;
-import net.minecraft.client.renderer.block.model.BakedQuad;
-import net.minecraft.client.renderer.block.model.BlockStateModel;
-import net.minecraft.client.renderer.entity.state.EntityRenderState;
-import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.RandomSource;
@@ -219,17 +211,12 @@ public class CookingOverlayRenderer {
         poseStack.pushPose();
         poseStack.translate(0.5f + offX, baseY + bob, 0.5f + offZ);
 
-        if (adaptToCeiling) {
-            Camera mainCam = Minecraft.getInstance().gameRenderer.getMainCamera();
-            if (mainCam != null) {
-                float pitch = Math.min(0.0f, mainCam.xRot());
-                Quaternionf rot = new Quaternionf()
-                        .rotationYXZ((float) Math.PI - mainCam.yRot() * 0.017453292F, -pitch * 0.017453292F, 0.0F);
-                poseStack.mulPose(rot);
-            } else {
-                poseStack.mulPose(cameraRenderState.orientation);
-            }
-        } else {
+        if (adaptToCeiling && cameraRenderState != null) {
+            float pitch = Math.min(0.0f, cameraRenderState.xRot);
+            Quaternionf rot = new Quaternionf()
+                    .rotationYXZ((float) Math.PI - cameraRenderState.yRot * 0.017453292F, -pitch * 0.017453292F, 0.0F);
+            poseStack.mulPose(rot);
+        } else if (cameraRenderState != null) {
             poseStack.mulPose(cameraRenderState.orientation);
         }
         poseStack.scale(scale, -scale, scale);
@@ -306,7 +293,7 @@ public class CookingOverlayRenderer {
         net.minecraft.client.renderer.OrderedSubmitNodeCollector bgCollector = submitNodeCollector.order(1);
         net.minecraft.client.renderer.OrderedSubmitNodeCollector barCollector = submitNodeCollector.order(2);
         net.minecraft.client.renderer.OrderedSubmitNodeCollector fgCollector = submitNodeCollector.order(3);
-        SubmitNodeCollector fgNodeCollector = new OrderedSubmitNodeCollectorAdapter(submitNodeCollector, 3);
+        SubmitNodeCollector fgNodeCollector = createOrderedSubmitNodeCollector(submitNodeCollector, 3);
 
         if (config.seeThroughBlocks) {
             bgCollector.submitCustomGeometry(poseStack, RenderTypeHelper.textBackgroundSeeThrough(), bgDrawer);
@@ -332,7 +319,7 @@ public class CookingOverlayRenderer {
             // When seeThroughBlocks is enabled, submit a textured see-through quad from the item's sprite (at z = 0.028f)
             // so item icons remain fully visible when viewing through occluding blocks or walls!
             if (config.seeThroughBlocks) {
-                TextureAtlasSprite sprite = itemState.pickParticleIcon(RandomSource.create());
+                TextureAtlasSprite sprite = pickItemParticleIcon(itemState);
                 if (sprite != null) {
                     float x1 = startX;
                     float y1 = rowY;
@@ -458,86 +445,40 @@ public class CookingOverlayRenderer {
      }
 
     /**
-     * Adapter wrapping an OrderedSubmitNodeCollector into a SubmitNodeCollector,
-     * ensuring that submissions routed through ItemStackRenderState are placed into the desired order.
+     * Resolves particle icon/sprite across Minecraft versions (26.1 pickParticleIcon vs 26.2 pickParticleMaterial).
      */
-    private static class OrderedSubmitNodeCollectorAdapter implements SubmitNodeCollector {
-        private final SubmitNodeCollector root;
-        private final OrderedSubmitNodeCollector delegate;
+    private static TextureAtlasSprite pickItemParticleIcon(ItemStackRenderState itemState) {
+        try {
+            var method = itemState.getClass().getMethod("pickParticleMaterial", RandomSource.class);
+            Object bakedMat = method.invoke(itemState, RandomSource.create());
+            if (bakedMat != null) {
+                var spriteMethod = bakedMat.getClass().getMethod("sprite");
+                return (TextureAtlasSprite) spriteMethod.invoke(bakedMat);
+            }
+        } catch (NoSuchMethodException e) {
+            try {
+                var method = itemState.getClass().getMethod("pickParticleIcon", RandomSource.class);
+                return (TextureAtlasSprite) method.invoke(itemState, RandomSource.create());
+            } catch (Exception ignored) {}
+        } catch (Exception ignored) {}
+        return null;
+    }
 
-        OrderedSubmitNodeCollectorAdapter(SubmitNodeCollector root, int order) {
-            this.root = root;
-            this.delegate = root.order(order);
-        }
-
-        @Override
-        public OrderedSubmitNodeCollector order(int order) {
-            return root.order(order);
-        }
-
-        @Override
-        public void submitShadow(PoseStack poseStack, float f, List<EntityRenderState.ShadowPiece> list) {
-            delegate.submitShadow(poseStack, f, list);
-        }
-
-        @Override
-        public void submitNameTag(PoseStack poseStack, Vec3 vec3, int i, Component component, boolean bl, int j, double d, CameraRenderState cameraRenderState) {
-            delegate.submitNameTag(poseStack, vec3, i, component, bl, j, d, cameraRenderState);
-        }
-
-        @Override
-        public void submitText(PoseStack poseStack, float f, float g, FormattedCharSequence formattedCharSequence, boolean bl, Font.DisplayMode displayMode, int i, int j, int k, int l) {
-            delegate.submitText(poseStack, f, g, formattedCharSequence, bl, displayMode, i, j, k, l);
-        }
-
-        @Override
-        public void submitFlame(PoseStack poseStack, EntityRenderState entityRenderState, Quaternionf quaternionf) {
-            delegate.submitFlame(poseStack, entityRenderState, quaternionf);
-        }
-
-        @Override
-        public void submitLeash(PoseStack poseStack, EntityRenderState.LeashState leashState) {
-            delegate.submitLeash(poseStack, leashState);
-        }
-
-        @Override
-        public <S> void submitModel(Model<? super S> model, S object, PoseStack poseStack, RenderType renderType, int i, int j, int k, TextureAtlasSprite sprite, int l, ModelFeatureRenderer.CrumblingOverlay crumblingOverlay) {
-            delegate.submitModel(model, object, poseStack, renderType, i, j, k, sprite, l, crumblingOverlay);
-        }
-
-        @Override
-        public void submitModelPart(ModelPart modelPart, PoseStack poseStack, RenderType renderType, int i, int j, TextureAtlasSprite sprite, boolean bl, boolean bl2, int k, ModelFeatureRenderer.CrumblingOverlay crumblingOverlay, int l) {
-            delegate.submitModelPart(modelPart, poseStack, renderType, i, j, sprite, bl, bl2, k, crumblingOverlay, l);
-        }
-
-        @Override
-        public void submitBlock(PoseStack poseStack, BlockState blockState, int i, int j, int k) {
-            delegate.submitBlock(poseStack, blockState, i, j, k);
-        }
-
-        @Override
-        public void submitMovingBlock(PoseStack poseStack, MovingBlockRenderState movingBlockRenderState) {
-            delegate.submitMovingBlock(poseStack, movingBlockRenderState);
-        }
-
-        @Override
-        public void submitBlockModel(PoseStack poseStack, RenderType renderType, BlockStateModel blockStateModel, float f, float g, float h, int i, int j, int k) {
-            delegate.submitBlockModel(poseStack, renderType, blockStateModel, f, g, h, i, j, k);
-        }
-
-        @Override
-        public void submitItem(PoseStack poseStack, ItemDisplayContext itemDisplayContext, int i, int j, int k, int[] is, List<BakedQuad> list, RenderType renderType, ItemStackRenderState.FoilType foilType) {
-            delegate.submitItem(poseStack, itemDisplayContext, i, j, k, is, list, renderType, foilType);
-        }
-
-        @Override
-        public void submitCustomGeometry(PoseStack poseStack, RenderType renderType, SubmitNodeCollector.CustomGeometryRenderer customGeometryRenderer) {
-            delegate.submitCustomGeometry(poseStack, renderType, customGeometryRenderer);
-        }
-
-        @Override
-        public void submitParticleGroup(SubmitNodeCollector.ParticleGroupRenderer particleGroupRenderer) {
-            delegate.submitParticleGroup(particleGroupRenderer);
-        }
+    /**
+     * Creates a SubmitNodeCollector proxy wrapping root.order(order),
+     * ensuring that submissions routed through ItemStackRenderState are placed into the desired order pass.
+     */
+    private static SubmitNodeCollector createOrderedSubmitNodeCollector(SubmitNodeCollector root, int order) {
+        net.minecraft.client.renderer.OrderedSubmitNodeCollector delegate = root.order(order);
+        return (SubmitNodeCollector) java.lang.reflect.Proxy.newProxyInstance(
+                SubmitNodeCollector.class.getClassLoader(),
+                new Class<?>[]{SubmitNodeCollector.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("order") && args != null && args.length == 1) {
+                        return root.order((int) args[0]);
+                    }
+                    return method.invoke(delegate, args);
+                }
+        );
     }
 }

@@ -4,7 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.sattik03.cooksense.config.CookSenseConfig;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -22,7 +22,7 @@ public class CookSenseClient implements ClientModInitializer {
         CookSenseConfig.getInstance();
 
         // Register toggle keybind (default: 'K')
-        toggleKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        toggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.cooksense.toggle",
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_K,
@@ -38,7 +38,7 @@ public class CookSenseClient implements ClientModInitializer {
 
                 if (client.player != null) {
                     Component message = Component.translatable(config.enabled ? "message.cooksense.toggle.on" : "message.cooksense.toggle.off");
-                    client.player.displayClientMessage(message, true); // true sends to Action Bar
+                    client.player.sendOverlayMessage(message);
                 }
             }
         });

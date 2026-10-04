@@ -5,9 +5,11 @@ plugins {
 
 neoForge {
     neoFormVersion = neo_form_version
-    parchment {
-        minecraftVersion = parchment_minecraft
-        mappingsVersion = parchment_version
+    if (project.hasProperty('parchment_version') && !project.property('parchment_version').isEmpty()) {
+        parchment {
+            minecraftVersion = parchment_minecraft
+            mappingsVersion = parchment_version
+        }
     }
 }
 
