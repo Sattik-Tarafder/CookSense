@@ -423,20 +423,31 @@ public class CookingOverlayRenderer {
      * Emits a clean single-sided front quad.
      */
     private static void drawQuad(VertexConsumer consumer, Matrix4f matrix, float x1, float y1, float x2, float y2, float z, int color, int light) {
-        consumer.addVertex(matrix, x1, y1, z).setColor(color).setLight(light);
-        consumer.addVertex(matrix, x1, y2, z).setColor(color).setLight(light);
-        consumer.addVertex(matrix, x2, y2, z).setColor(color).setLight(light);
-        consumer.addVertex(matrix, x2, y1, z).setColor(color).setLight(light);
+        addTransformedVertex(consumer, matrix, x1, y1, z).setColor(color).setLight(light);
+        addTransformedVertex(consumer, matrix, x1, y2, z).setColor(color).setLight(light);
+        addTransformedVertex(consumer, matrix, x2, y2, z).setColor(color).setLight(light);
+        addTransformedVertex(consumer, matrix, x2, y1, z).setColor(color).setLight(light);
     }
 
     /**
      * Emits a textured quad from a TextureAtlasSprite.
      */
     private static void drawTexturedQuad(VertexConsumer consumer, Matrix4f matrix, float x1, float y1, float x2, float y2, float z, TextureAtlasSprite sprite, int color, int light) {
-        consumer.addVertex(matrix, x1, y1, z).setColor(color).setUv(sprite.getU0(), sprite.getV0()).setLight(light);
-        consumer.addVertex(matrix, x1, y2, z).setColor(color).setUv(sprite.getU0(), sprite.getV1()).setLight(light);
-        consumer.addVertex(matrix, x2, y2, z).setColor(color).setUv(sprite.getU1(), sprite.getV1()).setLight(light);
-        consumer.addVertex(matrix, x2, y1, z).setColor(color).setUv(sprite.getU1(), sprite.getV0()).setLight(light);
+        addTransformedVertex(consumer, matrix, x1, y1, z).setColor(color).setUv(sprite.getU0(), sprite.getV0()).setLight(light);
+        addTransformedVertex(consumer, matrix, x1, y2, z).setColor(color).setUv(sprite.getU0(), sprite.getV1()).setLight(light);
+        addTransformedVertex(consumer, matrix, x2, y2, z).setColor(color).setUv(sprite.getU1(), sprite.getV1()).setLight(light);
+        addTransformedVertex(consumer, matrix, x2, y1, z).setColor(color).setUv(sprite.getU1(), sprite.getV0()).setLight(light);
+    }
+
+    /**
+     * Transforms coordinates by the given matrix and emits a vertex using the cross-version compatible addVertex(float, float, float).
+     * This avoids NoSuchMethodError across Minecraft 1.21.9 (Matrix4f) and 1.21.11 (Matrix4fc).
+     */
+    private static VertexConsumer addTransformedVertex(VertexConsumer consumer, Matrix4f matrix, float x, float y, float z) {
+        float vx = matrix.m00() * x + matrix.m10() * y + matrix.m20() * z + matrix.m30();
+        float vy = matrix.m01() * x + matrix.m11() * y + matrix.m21() * z + matrix.m31();
+        float vz = matrix.m02() * x + matrix.m12() * y + matrix.m22() * z + matrix.m32();
+        return consumer.addVertex(vx, vy, vz);
     }
 
     /**
