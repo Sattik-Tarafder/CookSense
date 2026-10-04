@@ -19,6 +19,10 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.CampfireBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.client.renderer.item.ItemModelResolver;
+import net.minecraft.client.renderer.item.ItemStackRenderState;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.util.RandomSource;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 
@@ -260,21 +264,195 @@ public class CookingOverlayRenderer {
 
         Matrix4f posMatrix = poseStack.last().pose();
 
+        MultiBufferSource.BufferSource immediate = (bufferSource instanceof MultiBufferSource.BufferSource imm) ? imm : null;
+
         // =========================================================================
-        // PASS 1: Render all background quads in one contiguous batch.
+        // PASS 1: Render background plate and progress bars
         // =========================================================================
-        RenderType bgLayer = config.seeThroughBlocks
-                ? RenderType.textBackgroundSeeThrough()
-                : RenderType.textBackground();
-        VertexConsumer bgConsumer = bufferSource.getBuffer(bgLayer);
+        if (config.seeThroughBlocks) {
+            // 1a. See-through background plate & outer border
+            VertexConsumer seeThroughPlate = bufferSource.getBuffer(RenderType.textBackgroundSeeThrough());
+            drawBackgroundPlate(seeThroughPlate, posMatrix, minX, minY, maxX, maxY, bgColor, borderColor);
+            if (immediate != null) {
+                immediate.endBatch(RenderType.textBackgroundSeeThrough());
+            }
 
-        // 1a. Warm dark interior plate (solid backing)
-        drawQuad(bgConsumer, posMatrix, minX, minY, maxX, maxY, 0.000f, bgColor, 0xF000F0);
+            // 1b. See-through progress bars in a separate batch so the dark plate cannot tint them
+            VertexConsumer seeThroughBars = bufferSource.getBuffer(RenderType.textBackgroundSeeThrough());
+            drawProgressBars(seeThroughBars, posMatrix, groups, startX, startY, iconSize, gap, rowHeight, maxTextWidth, alphaInt, isSoulCampfire);
+            if (immediate != null) {
+                immediate.endBatch(RenderType.textBackgroundSeeThrough());
+            }
+        }
 
-        // 1b. Cozy 1px outer framing border (HOLLOW frame so it never covers the interior)
-        drawHollowBorder(bgConsumer, posMatrix, minX - 1.0f, minY - 1.0f, maxX + 1.0f, maxY + 1.0f, 0.001f, borderColor, 0xF000F0);
+        // 1c. Normal background plate & outer border (writes depth to avoid particle bleed in line-of-sight)
+        VertexConsumer normalPlate = bufferSource.getBuffer(RenderType.textBackground());
+        drawBackgroundPlate(normalPlate, posMatrix, minX, minY, maxX, maxY, bgColor, borderColor);
+        if (immediate != null) {
+            immediate.endBatch(RenderType.textBackground());
+        }
 
-        // 1c. Mini progress bar tracks and fills for each row
+        // 1d. Normal progress bars
+        VertexConsumer normalBars = bufferSource.getBuffer(RenderType.textBackground());
+        drawProgressBars(normalBars, posMatrix, groups, startX, startY, iconSize, gap, rowHeight, maxTextWidth, alphaInt, isSoulCampfire);
+        if (immediate != null) {
+            immediate.endBatch(RenderType.textBackground());
+        }
+
+        // =========================================================================
+        // PASS 2: Render item icons inside the plate (+0.030f towards camera)
+        // =========================================================================
+        ItemModelResolver itemModelResolver = client.getItemModelResolver();
+
+        for (int r = 0; r < groups.size(); ++r) {
+            CookingGroup g = groups.get(r);
+            float rowY = startY + (r * rowHeight);
+
+            ItemStackRenderState itemState = new ItemStackRenderState();
+            if (itemModelResolver != null) {
+                itemModelResolver.updateForTopItem(itemState, g.item, ItemDisplayContext.GUI, level, null, 0);
+            }
+
+            // When seeThroughBlocks is enabled, submit a textured see-through quad from the item's sprite (at z = 0.028f)
+            // so item icons remain fully visible when viewing through occluding blocks or walls!
+            if (config.seeThroughBlocks) {
+                TextureAtlasSprite sprite = itemState.pickParticleIcon(RandomSource.create());
+                if (sprite != null) {
+                    float x1 = startX;
+                    float y1 = rowY;
+                    float x2 = startX + iconSize;
+                    float y2 = rowY + iconSize;
+                    int spriteColor = (alphaInt << 24) | 0xFFFFFF;
+                    RenderType spriteLayer = RenderType.textSeeThrough(sprite.atlasLocation());
+                    VertexConsumer spriteConsumer = bufferSource.getBuffer(spriteLayer);
+                    drawTexturedQuad(spriteConsumer, posMatrix, x1, y1, x2, y2, 0.028f, sprite, spriteColor, 0xF000F0);
+                    if (immediate != null) {
+                        immediate.endBatch(spriteLayer);
+                    }
+                }
+            }
+
+            // Normal 3D item model rendering (at z = 0.030f towards camera)
+            poseStack.pushPose();
+            poseStack.translate(startX + (iconSize / 2.0f), rowY + (iconSize / 2.0f), 0.030f);
+            poseStack.scale(iconSize, -iconSize, iconSize);
+            client.getItemRenderer().renderStatic(
+                    g.item,
+                    ItemDisplayContext.GUI,
+                    0xF000F0,
+                    OverlayTexture.NO_OVERLAY,
+                    poseStack,
+                    bufferSource,
+                    campfire.getLevel(),
+                    0
+            );
+            poseStack.popPose();
+        }
+
+        if (immediate != null) {
+            immediate.endBatch();
+        }
+
+        // =========================================================================
+        // PASS 3: Render text labels (+0.032f towards camera in front of plate)
+        // =========================================================================
+        int textColor = (alphaInt << 24) | 0xFFFFFF;
+
+        poseStack.pushPose();
+        poseStack.translate(0.0f, 0.0f, 0.032f);
+        Matrix4f textMatrix = poseStack.last().pose();
+
+        for (int r = 0; r < groups.size(); ++r) {
+            CookingGroup g = groups.get(r);
+            float rowY = startY + (r * rowHeight);
+
+            String timeStr = TimerFormatter.formatTime(g.minRemainingTicks);
+            String label = (g.count > 1 ? "x" + g.count + " " : "") + timeStr;
+
+            float textX = startX + iconSize + gap;
+            float textY = rowY;
+
+            // When seeThroughBlocks is enabled, submit a SEE_THROUGH text pass with full brightness and shadow
+            // so it punches through occluding walls clearly.
+            if (config.seeThroughBlocks) {
+                drawText(
+                        font,
+                        label,
+                        textX,
+                        textY,
+                        textColor,
+                        config.textShadow,
+                        textMatrix,
+                        bufferSource,
+                        Font.DisplayMode.SEE_THROUGH,
+                        0,
+                        0xF000F0
+                );
+            }
+
+            // Always submit the NORMAL text pass with crisp colors, full brightness, and drop shadows
+            drawText(
+                    font,
+                    label,
+                    textX,
+                    textY,
+                    textColor,
+                    config.textShadow,
+                    textMatrix,
+                    bufferSource,
+                    Font.DisplayMode.NORMAL,
+                    0,
+                    0xF000F0
+            );
+        }
+        poseStack.popPose();
+
+        poseStack.popPose();
+
+        // Flush CookSense batches immediately so the overlay renders during the block entity pass
+        // BEFORE translucent world geometry (water, ice, stained glass) is drawn.
+        // This ensures translucent blocks in front properly tint the overlay, while translucent
+        // blocks behind are correctly occluded and never bleed through.
+        if (immediate != null) {
+            immediate.endBatch();
+        }
+    }
+
+    /**
+     * Draws the background plate and outer 1px border.
+     */
+    private static void drawBackgroundPlate(
+            VertexConsumer consumer,
+            Matrix4f posMatrix,
+            float minX,
+            float minY,
+            float maxX,
+            float maxY,
+            int bgColor,
+            int borderColor
+    ) {
+        // Warm dark interior plate (solid backing)
+        drawQuad(consumer, posMatrix, minX, minY, maxX, maxY, 0.000f, bgColor, 0xF000F0);
+        // Cozy 1px outer framing border (HOLLOW frame so it never covers the interior)
+        drawHollowBorder(consumer, posMatrix, minX - 1.0f, minY - 1.0f, maxX + 1.0f, maxY + 1.0f, 0.001f, borderColor, 0xF000F0);
+    }
+
+    /**
+     * Draws the progress bar groove, fill, and remaining track for each cooking group.
+     */
+    private static void drawProgressBars(
+            VertexConsumer consumer,
+            Matrix4f posMatrix,
+            List<CookingGroup> groups,
+            float startX,
+            float startY,
+            int iconSize,
+            int gap,
+            int rowHeight,
+            int maxTextWidth,
+            int alphaInt,
+            boolean isSoulCampfire
+    ) {
         for (int r = 0; r < groups.size(); ++r) {
             CookingGroup g = groups.get(r);
             float rowY = startY + (r * rowHeight);
@@ -298,89 +476,20 @@ public class CookingOverlayRenderer {
             int trackBgColor = (alphaInt << 24) | (isSoulCampfire ? 0x0A1620 : 0x1A120E);
             int barFillColor = (alphaInt << 24) | barColorRgb;
 
-            // Recessed groove outline (1px hollow border strictly outside the bar - never overlaps the bar!)
-            drawHollowBorder(bgConsumer, posMatrix, barX - 1.0f, barY - 1.0f, barX + barWidth + 1.0f, barY + barHeight + 1.0f, 0.005f, grooveBorderColor, 0xF000F0);
+            // Recessed groove outline (1px hollow border strictly outside the bar)
+            drawHollowBorder(consumer, posMatrix, barX - 1.0f, barY - 1.0f, barX + barWidth + 1.0f, barY + barHeight + 1.0f, 0.003f, grooveBorderColor, 0xF000F0);
 
             float filledWidth = progress > 0.0f ? Math.min(barWidth, Math.max(1.5f, barWidth * progress)) : 0.0f;
 
             // Filled progress bar portion (barX to barX + filledWidth) at clean z = 0.005f
             if (filledWidth > 0.0f) {
-                drawQuad(bgConsumer, posMatrix, barX, barY, barX + filledWidth, barY + barHeight, 0.005f, barFillColor, 0xF000F0);
+                drawQuad(consumer, posMatrix, barX, barY, barX + filledWidth, barY + barHeight, 0.005f, barFillColor, 0xF000F0);
             }
 
-            // Empty track portion (ONLY for the remaining unfilled segment: barX + filledWidth to barX + barWidth) at z = 0.005f
+            // Empty track portion (ONLY for the remaining unfilled segment: barX + filledWidth to barX + barWidth) at z = 0.004f
             if (filledWidth < barWidth) {
-                drawQuad(bgConsumer, posMatrix, barX + filledWidth, barY, barX + barWidth, barY + barHeight, 0.005f, trackBgColor, 0xF000F0);
+                drawQuad(consumer, posMatrix, barX + filledWidth, barY, barX + barWidth, barY + barHeight, 0.004f, trackBgColor, 0xF000F0);
             }
-        }
-
-        // =========================================================================
-        // PASS 2: Render 2D item icons inside the plate (+0.030f towards camera)
-        // =========================================================================
-        for (int r = 0; r < groups.size(); ++r) {
-            CookingGroup g = groups.get(r);
-            float rowY = startY + (r * rowHeight);
-
-            poseStack.pushPose();
-            poseStack.translate(startX + (iconSize / 2.0f), rowY + (iconSize / 2.0f), 0.030f);
-            poseStack.scale(iconSize, -iconSize, iconSize);
-            client.getItemRenderer().renderStatic(
-                    g.item,
-                    ItemDisplayContext.GUI,
-                    0xF000F0,
-                    OverlayTexture.NO_OVERLAY,
-                    poseStack,
-                    bufferSource,
-                    campfire.getLevel(),
-                    0
-            );
-            poseStack.popPose();
-        }
-
-        // =========================================================================
-        // PASS 3: Render text labels (+0.015f towards camera in front of plate)
-        // =========================================================================
-        int textColor = (alphaInt << 24) | 0xFFFFFF;
-
-        poseStack.pushPose();
-        poseStack.translate(0.0f, 0.0f, 0.015f);
-        Matrix4f textMatrix = poseStack.last().pose();
-
-        for (int r = 0; r < groups.size(); ++r) {
-            CookingGroup g = groups.get(r);
-            float rowY = startY + (r * rowHeight);
-
-            String timeStr = TimerFormatter.formatTime(g.minRemainingTicks);
-            String label = (g.count > 1 ? "x" + g.count + " " : "") + timeStr;
-
-            float textX = startX + iconSize + gap;
-            float textY = rowY;
-
-            drawText(
-                    font,
-                    label,
-                    textX,
-                    textY,
-                    textColor,
-                    config.textShadow,
-                    textMatrix,
-                    bufferSource,
-                    Font.DisplayMode.NORMAL,
-                    0,
-                    0xF000F0
-            );
-        }
-        poseStack.popPose();
-
-        poseStack.popPose();
-
-        // Flush CookSense batches immediately so the overlay renders during the block entity pass
-        // BEFORE translucent world geometry (water, ice, stained glass) is drawn.
-        // This ensures translucent blocks in front properly tint the overlay, while translucent
-        // blocks behind are correctly occluded and never bleed through.
-        if (bufferSource instanceof MultiBufferSource.BufferSource immediate) {
-            immediate.endBatch(bgLayer);
-            immediate.endBatch();
         }
     }
 
@@ -427,10 +536,31 @@ public class CookingOverlayRenderer {
      * Emits a clean single-sided front quad.
      */
     private static void drawQuad(VertexConsumer consumer, Matrix4f matrix, float x1, float y1, float x2, float y2, float z, int color, int light) {
-        consumer.addVertex(matrix, x1, y1, z).setColor(color).setLight(light);
-        consumer.addVertex(matrix, x1, y2, z).setColor(color).setLight(light);
-        consumer.addVertex(matrix, x2, y2, z).setColor(color).setLight(light);
-        consumer.addVertex(matrix, x2, y1, z).setColor(color).setLight(light);
+        addTransformedVertex(consumer, matrix, x1, y1, z).setColor(color).setLight(light);
+        addTransformedVertex(consumer, matrix, x1, y2, z).setColor(color).setLight(light);
+        addTransformedVertex(consumer, matrix, x2, y2, z).setColor(color).setLight(light);
+        addTransformedVertex(consumer, matrix, x2, y1, z).setColor(color).setLight(light);
+    }
+
+    /**
+     * Emits a textured quad from a TextureAtlasSprite.
+     */
+    private static void drawTexturedQuad(VertexConsumer consumer, Matrix4f matrix, float x1, float y1, float x2, float y2, float z, TextureAtlasSprite sprite, int color, int light) {
+        addTransformedVertex(consumer, matrix, x1, y1, z).setColor(color).setUv(sprite.getU0(), sprite.getV0()).setLight(light);
+        addTransformedVertex(consumer, matrix, x1, y2, z).setColor(color).setUv(sprite.getU0(), sprite.getV1()).setLight(light);
+        addTransformedVertex(consumer, matrix, x2, y2, z).setColor(color).setUv(sprite.getU1(), sprite.getV1()).setLight(light);
+        addTransformedVertex(consumer, matrix, x2, y1, z).setColor(color).setUv(sprite.getU1(), sprite.getV0()).setLight(light);
+    }
+
+    /**
+     * Transforms coordinates by the given matrix and emits a vertex using the cross-version compatible addVertex(float, float, float).
+     * This avoids NoSuchMethodError across Matrix4f vs Matrix4fc differences.
+     */
+    private static VertexConsumer addTransformedVertex(VertexConsumer consumer, Matrix4f matrix, float x, float y, float z) {
+        float vx = matrix.m00() * x + matrix.m10() * y + matrix.m20() * z + matrix.m30();
+        float vy = matrix.m01() * x + matrix.m11() * y + matrix.m21() * z + matrix.m31();
+        float vz = matrix.m02() * x + matrix.m12() * y + matrix.m22() * z + matrix.m32();
+        return consumer.addVertex(vx, vy, vz);
     }
 
 
